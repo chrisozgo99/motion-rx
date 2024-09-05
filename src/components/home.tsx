@@ -23,11 +23,18 @@ To read more about using these font, please visit the Next.js documentation:
 - App Directory: https://nextjs.org/docs/app/building-your-application/optimizing/fonts
 - Pages Directory: https://nextjs.org/docs/pages/building-your-application/optimizing/fonts
 **/
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { JSX, SVGProps } from "react"
 
-export function Home() {
+interface HomeProps {
+  onRecordVideo: () => void
+};
+
+export function Home(props: HomeProps) {
+  const { onRecordVideo } = props;
+  
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
       <header className="container mx-auto flex h-20 items-center justify-between px-4 md:px-6">
@@ -58,7 +65,9 @@ export function Home() {
             Get an instant prognosis, doctor referral, and treatment plan for your pain symptoms.
           </p>
           <div className="mt-8">
-            <Button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+            <Button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              onClick={onRecordVideo}
+            >
               Record Video
             </Button>
           </div>
