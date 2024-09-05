@@ -24,19 +24,69 @@ To read more about using these font, please visit the Next.js documentation:
 - Pages Directory: https://nextjs.org/docs/pages/building-your-application/optimizing/fonts
 **/
 
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { JSX, SVGProps } from "react"
 
 interface HomeProps {
-  onRecordVideo: () => void
+  isRecording: boolean;
+  handleStartRecording: () => void;
+  handleStopRecording: () => void;
 };
 
-export function Home(props: HomeProps) {
-  const { onRecordVideo } = props;
-  
+export function Home({ handleStartRecording, handleStopRecording }: HomeProps) {
+  const [showOverlay, setShowOverlay] = useState(false);
+  const [localIsRecording, setLocalIsRecording] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleRecordVideo = () => {
+    if (!showOverlay) {
+      setShowOverlay(true);
+    }
+  };
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+
+    if (showOverlay && videoRef.current) {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(mediaStream => {
+          stream = mediaStream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        })
+        .catch(err => console.error("Error accessing camera:", err));
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [showOverlay]);
+
+  const handleCloseOverlay = () => {
+    setShowOverlay(false);
+    if (localIsRecording) {
+      handleStopRecording();
+      setLocalIsRecording(false);
+    }
+  };
+
+  const handleRecordingToggle = () => {
+    if (localIsRecording) {
+      handleStopRecording();
+      setLocalIsRecording(false);
+    } else {
+      handleStartRecording();
+      setLocalIsRecording(true);
+    }
+  };
+
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-background">
+    <div className="flex min-h-[100dvh] flex-col bg-background relative">
       <header className="container mx-auto flex h-20 items-center justify-between px-4 md:px-6">
         <Link href="#" className="flex items-center gap-2" prefetch={false}>
           <MountainIcon className="h-6 w-6" />
@@ -65,14 +115,40 @@ export function Home(props: HomeProps) {
             Get an instant prognosis, doctor referral, and treatment plan for your pain symptoms.
           </p>
           <div className="mt-8">
-            <Button className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-              onClick={onRecordVideo}
+            <Button
+              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              onClick={handleRecordVideo}
             >
-              Record Video
+              Start Recording
             </Button>
           </div>
         </div>
       </main>
+
+      {/* Video recording overlay */}
+      {showOverlay && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-2xl w-full">
+            <h2 className="text-2xl font-bold mb-4">Record Your Video</h2>
+            <div className="aspect-video bg-gray-200 mb-4 overflow-hidden rounded">
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="flex justify-between">
+              <Button onClick={handleCloseOverlay} variant="outline">Close</Button>
+              <Button onClick={handleRecordingToggle}>
+                {localIsRecording ? "Stop Recording" : "Start Recording"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <footer className="container mx-auto border-t py-6 px-4 md:px-6">
         <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
           <p className="text-xs text-muted-foreground">&copy; 2024 Acme Inc. All rights reserved.</p>
