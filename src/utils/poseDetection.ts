@@ -28,14 +28,14 @@ export async function detectPose(
 
   if (poses.length > 0) {
     const pose = poses[0];
-    drawPose(pose, ctx, canvas.width, canvas.height);
+    drawPose(pose, ctx, canvas.width);
   }
 
   // Copy the pose overlay to the combined canvas
   combinedCtx.drawImage(canvas, 0, 0);
 }
 
-function drawPose(pose: poseDetection.Pose, ctx: CanvasRenderingContext2D, width: number, height: number) {
+function drawPose(pose: poseDetection.Pose, ctx: CanvasRenderingContext2D, width: number) {
   const keypoints = pose.keypoints.filter(kp => 
     kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
   );

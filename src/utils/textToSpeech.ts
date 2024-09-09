@@ -13,7 +13,7 @@ export async function speakInstruction(text: string): Promise<void> {
     }
 
     const audioBuffer = await response.arrayBuffer();
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioContext = new AudioContext();
     
     audioContext.decodeAudioData(audioBuffer, (buffer) => {
       const source = audioContext.createBufferSource();

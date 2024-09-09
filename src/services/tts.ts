@@ -15,7 +15,7 @@ export async function textToSpeech(text: string): Promise<ArrayBuffer> {
 }
 
 export function playAudio(audioBuffer: ArrayBuffer) {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioContext = new AudioContext();
   audioContext.decodeAudioData(audioBuffer, (buffer) => {
     const source = audioContext.createBufferSource();
     source.buffer = buffer;

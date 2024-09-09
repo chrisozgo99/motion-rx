@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Webcam from 'react-webcam'
@@ -26,7 +26,7 @@ async function textToSpeech(text: string): Promise<ArrayBuffer> {
 }
 
 function playAudio(audioBuffer: ArrayBuffer) {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioContext = new AudioContext();
   audioContext.decodeAudioData(audioBuffer, (buffer) => {
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
@@ -35,7 +35,7 @@ function playAudio(audioBuffer: ArrayBuffer) {
   });
 }
 
-export default function MotionAnalysis() {
+function MotionAnalysisContent() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [isAnalysisStarted, setIsAnalysisStarted] = useState(false)
@@ -44,15 +44,14 @@ export default function MotionAnalysis() {
   const [isTfReady, setIsTfReady] = useState(false)
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null)
   const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
-  const [trimStart, setTrimStart] = useState(0)
-  const [trimEnd, setTrimEnd] = useState(1)
+  const [trimStart] = useState(0)
+  const [trimEnd] = useState(1)
   const [videoDuration, setVideoDuration] = useState(0)
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [isVideoLoading, setIsVideoLoading] = useState(true)
   const [startFrame, setStartFrame] = useState(0)
   const [endFrame, setEndFrame] = useState(0)
   const [totalFrames, setTotalFrames] = useState(0)
-  const [currentFrame, setCurrentFrame] = useState(0)
 
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -81,7 +80,6 @@ export default function MotionAnalysis() {
         setTotalFrames(frames);
         setStartFrame(0);
         setEndFrame(frames - 1);
-        setCurrentFrame(0);
         setIsVideoLoaded(true);
       } else {
         // If duration is not available, wait and check again
@@ -299,7 +297,6 @@ export default function MotionAnalysis() {
   const handleFrameChange = useCallback((frame: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = frame / 30; // Assuming 30 fps
-      setCurrentFrame(frame);
     }
   }, []);
 
@@ -443,5 +440,13 @@ export default function MotionAnalysis() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function MotionAnalysis() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <MotionAnalysisContent />
+    </Suspense>
   )
 }

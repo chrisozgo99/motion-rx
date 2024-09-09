@@ -89,7 +89,7 @@ export default function Questionnaire() {
           <p className="mb-4">{motionAnalysis}</p>
           <button
             onClick={() => router.push(`/motion-analysis?prompt=${encodeURIComponent(motionAnalysis || '')}`)}
-            className="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="w-full py-3 px-4 bg-[black] text-white rounded-md hover:bg-[black]/80 transition-colors"
           >
             Start Motion Analysis
           </button>
@@ -111,7 +111,7 @@ export default function Questionnaire() {
       <div className="mx-auto max-w-2xl w-full relative">
         <Link
           href="/"
-          className="absolute top-0 left-0 inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white bg-white focus:outline-none"
+          className="absolute top-0 left-0 inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-black bg-white focus:outline-none"
         >
           ← Home
         </Link>
