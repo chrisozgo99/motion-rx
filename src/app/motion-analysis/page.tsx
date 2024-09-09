@@ -7,6 +7,7 @@ import Webcam from 'react-webcam'
 import * as poseDetection from '@tensorflow-models/pose-detection'
 import * as tf from '@tensorflow/tfjs-core'
 import '@tensorflow/tfjs-backend-webgl'
+import { Slider } from "@/components/ui/slider"
 
 async function textToSpeech(text: string): Promise<ArrayBuffer> {
   const response = await fetch('/api/tts', {
@@ -48,6 +49,10 @@ export default function MotionAnalysis() {
   const [videoDuration, setVideoDuration] = useState(0)
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [isVideoLoading, setIsVideoLoading] = useState(true)
+  const [startFrame, setStartFrame] = useState(0)
+  const [endFrame, setEndFrame] = useState(0)
+  const [totalFrames, setTotalFrames] = useState(0)
+  const [currentFrame, setCurrentFrame] = useState(0)
 
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -55,7 +60,6 @@ export default function MotionAnalysis() {
   const lastInstructionTimeRef = useRef(0)
   const isUserInFrameRef = useRef(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const trimmerRef = useRef<HTMLDivElement>(null)
   const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
   const animationFrameRef = useRef<number | null>(null)
 
@@ -73,8 +77,11 @@ export default function MotionAnalysis() {
       if (isFinite(duration) && duration > 0) {
         setIsVideoLoading(false);
         setVideoDuration(duration);
-        setTrimStart(0);
-        setTrimEnd(1);
+        const frames = Math.floor(duration * 30); // Assuming 30 fps
+        setTotalFrames(frames);
+        setStartFrame(0);
+        setEndFrame(frames - 1);
+        setCurrentFrame(0);
         setIsVideoLoaded(true);
       } else {
         // If duration is not available, wait and check again
@@ -284,55 +291,29 @@ export default function MotionAnalysis() {
     }
   }, [recordedVideo]);
 
-  const handleTrimmerMouseDown = (e: React.MouseEvent) => {
-    if (trimmerRef.current) {
-      const rect = trimmerRef.current.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const startHandle = x < rect.width * trimStart + 10
-      const endHandle = x > rect.width * trimEnd - 10
-
-      if (startHandle) {
-        document.addEventListener('mousemove', handleTrimStartMove)
-        document.addEventListener('mouseup', handleTrimMouseUp)
-      } else if (endHandle) {
-        document.addEventListener('mousemove', handleTrimEndMove)
-        document.addEventListener('mouseup', handleTrimMouseUp)
-      }
-    }
-  }
-
-  const handleTrimStartMove = useCallback((e: MouseEvent) => {
-    if (trimmerRef.current) {
-      const rect = trimmerRef.current.getBoundingClientRect()
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-      const newTrim = x / rect.width
-      if (newTrim < trimEnd - 0.1) {
-        setTrimStart(newTrim)
-      }
-    }
-  }, [trimEnd])
-
-  const handleTrimEndMove = useCallback((e: MouseEvent) => {
-    if (trimmerRef.current) {
-      const rect = trimmerRef.current.getBoundingClientRect()
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-      const newTrim = x / rect.width
-      if (newTrim > trimStart + 0.1) {
-        setTrimEnd(newTrim)
-      }
-    }
-  }, [trimStart])
-
-  const handleTrimMouseUp = useCallback(() => {
-    document.removeEventListener('mousemove', handleTrimStartMove)
-    document.removeEventListener('mousemove', handleTrimEndMove)
-    document.removeEventListener('mouseup', handleTrimMouseUp)
-  }, [handleTrimStartMove, handleTrimEndMove])
-
   const handleSave = () => {
     console.log(`Clip created from ${(trimStart * videoDuration).toFixed(2)}s to ${(trimEnd * videoDuration).toFixed(2)}s`)
     // Here you would typically send this data to a server or process the video
   }
+
+  const handleFrameChange = useCallback((frame: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = frame / 30; // Assuming 30 fps
+      setCurrentFrame(frame);
+    }
+  }, []);
+
+  const handleStartFrameChange = useCallback((value: number[]) => {
+    const frame = value[0];
+    setStartFrame(frame);
+    handleFrameChange(frame);
+  }, [handleFrameChange]);
+
+  const handleEndFrameChange = useCallback((value: number[]) => {
+    const frame = value[0];
+    setEndFrame(frame);
+    handleFrameChange(frame);
+  }, [handleFrameChange]);
 
   // Add a cleanup effect
   useEffect(() => {
@@ -409,19 +390,31 @@ export default function MotionAnalysis() {
                     Your browser does not support the video tag.
                   </video>
                   {isVideoLoaded && (
-                    <>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm">
-                          {isFinite(trimStart * videoDuration) ? (trimStart * videoDuration).toFixed(2) : '0.00'}s
-                        </span>
-                        <span className="text-sm">
-                          {isFinite(trimEnd * videoDuration) ? (trimEnd * videoDuration).toFixed(2) : '0.00'}s
-                        </span>
+                    <div className="space-y-4 mt-4">
+                      <div className="flex flex-col space-y-2">
+                        <label className="text-sm font-medium">Start Frame: {startFrame}</label>
+                        <Slider
+                          value={[startFrame]}
+                          min={0}
+                          max={totalFrames - 1}
+                          step={1}
+                          onValueChange={handleStartFrameChange}
+                        />
                       </div>
-                      <div className="text-sm">
-                        Clip duration: {isFinite((trimEnd - trimStart) * videoDuration) ? ((trimEnd - trimStart) * videoDuration).toFixed(2) : '0.00'}s
+                      <div className="flex flex-col space-y-2">
+                        <label className="text-sm font-medium">End Frame: {endFrame}</label>
+                        <Slider
+                          value={[endFrame]}
+                          min={0}
+                          max={totalFrames - 1}
+                          step={1}
+                          onValueChange={handleEndFrameChange}
+                        />
                       </div>
-                    </>
+                      <p className="text-sm text-center">
+                        Selected range: {startFrame} - {endFrame} ({endFrame - startFrame + 1} frames)
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
