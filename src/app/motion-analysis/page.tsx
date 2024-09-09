@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Webcam from 'react-webcam'
@@ -44,14 +44,92 @@ export default function MotionAnalysis() {
   const [clipStart, setClipStart] = useState(0)
   const [clipEnd, setClipEnd] = useState(0)
   const [isTfReady, setIsTfReady] = useState(false)
-  const [isUserInFrame, setIsUserInFrame] = useState(false)
-  const [lastInstructionTime, setLastInstructionTime] = useState(0)
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null)
+  const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
+  const [trimStart, setTrimStart] = useState(0)
+  const [trimEnd, setTrimEnd] = useState(1)
+  const [videoDuration, setVideoDuration] = useState(0)
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false)
+  const [isVideoLoading, setIsVideoLoading] = useState(true)
 
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const lastInstructionTimeRef = useRef(0);
+  const lastInstructionTimeRef = useRef(0)
+  const isUserInFrameRef = useRef(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const trimmerRef = useRef<HTMLDivElement>(null)
+  const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
+  const animationFrameRef = useRef<number | null>(null)
+
+  const generateThumbnails = () => {
+    console.log("Generating thumbnails");
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      const context = canvas.getContext('2d')
+      if (!context) return
+
+      const thumbnailCount = 20
+      const thumbnailWidth = canvas.width / thumbnailCount
+
+      // Check if video duration is valid
+      if (!isFinite(video.duration) || video.duration === 0) {
+        console.error('Invalid video duration:', video.duration)
+        return
+      }
+
+      const generateThumbnail = (i: number) => {
+        const time = (video.duration / thumbnailCount) * i
+        if (!isFinite(time)) {
+          console.error('Invalid time calculated:', time)
+          return
+        }
+
+        video.currentTime = time
+      }
+
+      video.onseeked = () => {
+        const currentIndex = Math.floor(video.currentTime / (video.duration / thumbnailCount))
+        context.drawImage(video, currentIndex * thumbnailWidth, 0, thumbnailWidth, canvas.height)
+
+        if (currentIndex < thumbnailCount - 1) {
+          generateThumbnail(currentIndex + 1)
+        } else {
+          video.currentTime = 0
+        }
+      }
+
+      generateThumbnail(0)
+    }
+  }
+
+  const handleVideoLoaded = useCallback(async () => {
+    console.log("Video loaded");
+
+    if (videoRef.current) {
+      while(videoRef.current.duration === Infinity) {
+        await new Promise(r => setTimeout(r, 1000));
+        videoRef.current.currentTime = 10000000*Math.random();
+      }
+      const duration = videoRef.current.duration;
+      console.log("Checking video duration:", duration);
+
+      if (isFinite(duration) && duration > 0) {
+        setIsVideoLoading(false);
+        setVideoDuration(duration);
+        setTrimStart(0);
+        setTrimEnd(1);
+        setIsVideoLoaded(true);
+        generateThumbnails();
+      } else {
+        // If duration is not available, wait and check again
+      }
+    } else {
+      console.error("Invalid video reference");
+      setIsVideoLoading(false);
+    }
+  }, [generateThumbnails]);
 
   useEffect(() => {
     const promptParam = searchParams.get('prompt')
@@ -87,36 +165,44 @@ export default function MotionAnalysis() {
     setDetector(newDetector)
   }
 
-  const detectPose = async () => {
-    if (!webcamRef.current || !canvasRef.current || !detector) return
+  const detectPose = useCallback(async () => {
+    if (!webcamRef.current || !canvasRef.current || !combinedCanvasRef.current || !detector) return
 
     const video = webcamRef.current.video
     const canvas = canvasRef.current
+    const combinedCanvas = combinedCanvasRef.current
     const ctx = canvas.getContext('2d')
+    const combinedCtx = combinedCanvas.getContext('2d')
 
-    if (!video || !ctx) return
+    if (!video || !ctx || !combinedCtx) return
 
     const poses = await detector.estimatePoses(video)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    
-    // Draw mirrored video feed
+    combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
+
+    // Draw mirrored video feed on both canvases
     ctx.save()
     ctx.scale(-1, 1)
     ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
     ctx.restore()
 
+    combinedCtx.save()
+    combinedCtx.scale(-1, 1)
+    combinedCtx.drawImage(video, -combinedCanvas.width, 0, combinedCanvas.width, combinedCanvas.height)
+    combinedCtx.restore()
+
     if (poses.length > 0) {
       const pose = poses[0]
-      const keypoints = pose.keypoints.filter(kp => 
+      const keypoints = pose.keypoints.filter(kp =>
         kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
       )
 
-      const isInFrame = keypoints.every(kp => 
-        kp.score && kp.score > 0.5 && kp.x > 0.05 && kp.x < 0.95 && kp.y > 0.05 && kp.y < 0.95
+      const isInFrame = keypoints.every(kp =>
+        kp.score && kp.score > 0.5 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
       )
 
-      if (isInFrame !== isUserInFrame) {
-        setIsUserInFrame(isInFrame)
+      if (isInFrame !== isUserInFrameRef.current) {
+        isUserInFrameRef.current = isInFrame
         if (isInFrame) {
           speakInstruction(prompt)
           lastInstructionTimeRef.current = Date.now()
@@ -124,9 +210,13 @@ export default function MotionAnalysis() {
       }
 
       const currentTime = Date.now()
-      if (!isInFrame && currentTime - lastInstructionTimeRef.current > 5000) {
+      if (!isUserInFrameRef.current && currentTime - lastInstructionTimeRef.current > 15000) { // about every 10 seconds
+        const instruction = isRecording
+          ? "Please position your full body in the frame."
+          : "Start the recording, and then please position your full body in the frame."
+        speakInstruction(instruction)
         lastInstructionTimeRef.current = currentTime
-        speakInstruction("Please position your full body in the frame.")
+
       }
 
       // Draw connecting lines
@@ -169,8 +259,11 @@ export default function MotionAnalysis() {
       })
     }
 
-    requestAnimationFrame(detectPose)
-  }
+    // Copy the pose overlay to the combined canvas
+    combinedCtx.drawImage(canvas, 0, 0)
+
+    animationFrameRef.current = requestAnimationFrame(detectPose)
+  }, [detector])
 
   const speakInstruction = async (text: string) => {
     try {
@@ -181,33 +274,120 @@ export default function MotionAnalysis() {
     }
   }
 
-  const startRecording = () => {
-    if (webcamRef.current && webcamRef.current.stream) {
-      mediaRecorderRef.current = new MediaRecorder(webcamRef.current.stream)
+  const startRecording = useCallback(() => {
+    if (combinedCanvasRef.current) {
+      const stream = combinedCanvasRef.current.captureStream(30) // 30 FPS
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'video/webm' })
       mediaRecorderRef.current.ondataavailable = handleDataAvailable
       mediaRecorderRef.current.start()
       setIsRecording(true)
+      console.log("Recording started");
+    }
+  }, [])
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      console.log("Stopping recording...");
+
+      // Add event listener for dataavailable before stopping
+      mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
+
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+
+      console.log("Recording stopped");
+    } else {
+      console.log("MediaRecorder is not active");
+    }
+  }, []);
+
+  const handleDataAvailable = useCallback((event: BlobEvent) => {
+    console.log("Data available event triggered");
+    if (event.data && event.data.size > 0) {
+      console.log("Data available, size:", event.data.size);
+      const videoBlob = new Blob([event.data], { type: 'video/webm' });
+      const videoUrl = URL.createObjectURL(videoBlob);
+      setRecordedVideo(videoUrl);
+      setIsClipping(true);
+      console.log("Video recorded, URL created:", videoUrl);
+    } else {
+      console.error("No data available from MediaRecorder");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (recordedVideo) {
+      console.log("Recorded video URL set:", recordedVideo);
+      if (videoRef.current) {
+        console.log("Setting video source");
+        videoRef.current.src = recordedVideo;
+        videoRef.current.preload = "metadata";
+        videoRef.current.load(); // Force the video to load metadata
+        console.log("Video source set and loaded");
+      } else {
+        console.error("Video ref is not available");
+      }
+    }
+  }, [recordedVideo]);
+
+  const handleTrimmerMouseDown = (e: React.MouseEvent) => {
+    if (trimmerRef.current) {
+      const rect = trimmerRef.current.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const startHandle = x < rect.width * trimStart + 10
+      const endHandle = x > rect.width * trimEnd - 10
+
+      if (startHandle) {
+        document.addEventListener('mousemove', handleTrimStartMove)
+        document.addEventListener('mouseup', handleTrimMouseUp)
+      } else if (endHandle) {
+        document.addEventListener('mousemove', handleTrimEndMove)
+        document.addEventListener('mouseup', handleTrimMouseUp)
+      }
     }
   }
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-      setIsClipping(true)
+  const handleTrimStartMove = useCallback((e: MouseEvent) => {
+    if (trimmerRef.current) {
+      const rect = trimmerRef.current.getBoundingClientRect()
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+      const newTrim = x / rect.width
+      if (newTrim < trimEnd - 0.1) {
+        setTrimStart(newTrim)
+      }
     }
-  }
+  }, [trimEnd])
 
-  const handleDataAvailable = (event: BlobEvent) => {
-    if (event.data.size > 0) {
-      setRecordedChunks((prev) => [...prev, event.data])
+  const handleTrimEndMove = useCallback((e: MouseEvent) => {
+    if (trimmerRef.current) {
+      const rect = trimmerRef.current.getBoundingClientRect()
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+      const newTrim = x / rect.width
+      if (newTrim > trimStart + 0.1) {
+        setTrimEnd(newTrim)
+      }
     }
-  }
+  }, [trimStart])
+
+  const handleTrimMouseUp = useCallback(() => {
+    document.removeEventListener('mousemove', handleTrimStartMove)
+    document.removeEventListener('mousemove', handleTrimEndMove)
+    document.removeEventListener('mouseup', handleTrimMouseUp)
+  }, [handleTrimStartMove, handleTrimEndMove])
 
   const handleSave = () => {
-    // Implement saving logic here
-    console.log('Saving video clip...')
+    console.log(`Clip created from ${(trimStart * videoDuration).toFixed(2)}s to ${(trimEnd * videoDuration).toFixed(2)}s`)
+    // Here you would typically send this data to a server or process the video
   }
+
+  // Add a cleanup effect
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-4 py-12 sm:px-6 lg:px-8">
@@ -228,22 +408,69 @@ export default function MotionAnalysis() {
             <div className="space-y-4">
               <p className="font-bold">Motion Analysis in Progress</p>
               <p>Please perform the suggested movement. The camera will record and analyze your motion.</p>
-              <div className="relative">
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  width={640}
-                  height={480}
-                  className="rounded-lg"
-                  mirrored={true}
-                />
-                <canvas
-                  ref={canvasRef}
-                  width={640}
-                  height={480}
-                  className="absolute top-0 left-0 rounded-lg"
-                />
-              </div>
+              {!recordedVideo ? (
+                <div className="relative">
+                  <Webcam
+                    ref={webcamRef}
+                    audio={false}
+                    width={640}
+                    height={480}
+                    className="rounded-lg"
+                    mirrored={true}
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    width={640}
+                    height={480}
+                    className="absolute top-0 left-0 rounded-lg"
+                  />
+                  <canvas
+                    ref={combinedCanvasRef}
+                    width={640}
+                    height={480}
+                    className="hidden"
+                  />
+                  {isRecording && (
+                    <div className="absolute top-4 right-4 flex items-center">
+                      <div className="w-4 h-4 bg-red-500 rounded-full mr-2 animate-pulse" />
+                      <span className="text-white font-bold text-sm">REC</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {isVideoLoading && <p>Loading video...</p>}
+                  <video
+                    ref={videoRef}
+                    className={`w-full rounded-lg`}
+                    controls
+                    preload="metadata"
+                    onLoadedData={handleVideoLoaded}
+                    onError={(e) => {
+                      console.error("Video error:", (e.target as HTMLVideoElement).error);
+                      setIsVideoLoading(false);
+                    }}
+                  >
+                    <source src={recordedVideo} type="video/webm" />
+                    Your browser does not support the video tag.
+                  </video>
+                  {isVideoLoaded && (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">
+                          {isFinite(trimStart * videoDuration) ? (trimStart * videoDuration).toFixed(2) : '0.00'}s
+                        </span>
+                        <span className="text-sm">
+                          {isFinite(trimEnd * videoDuration) ? (trimEnd * videoDuration).toFixed(2) : '0.00'}s
+                        </span>
+                      </div>
+                      <div className="text-sm">
+                        Clip duration: {isFinite((trimEnd - trimStart) * videoDuration) ? ((trimEnd - trimStart) * videoDuration).toFixed(2) : '0.00'}s
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {!isClipping ? (
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
@@ -252,31 +479,12 @@ export default function MotionAnalysis() {
                   {isRecording ? 'Stop Recording' : 'Start Recording'}
                 </button>
               ) : (
-                <div className="space-y-4">
-                  <p>Clip your video to include only the relevant movement:</p>
-                  <input
-                    type="range"
-                    min={0}
-                    max={recordedChunks.length > 0 ? recordedChunks[0].size : 100}
-                    value={clipStart}
-                    onChange={(e) => setClipStart(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <input
-                    type="range"
-                    min={0}
-                    max={recordedChunks.length > 0 ? recordedChunks[0].size : 100}
-                    value={clipEnd}
-                    onChange={(e) => setClipEnd(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <button
-                    onClick={handleSave}
-                    className="w-full inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    Save Clip
-                  </button>
-                </div>
+                <button
+                  onClick={handleSave}
+                  className="w-full inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  Save Clip
+                </button>
               )}
             </div>
           )}

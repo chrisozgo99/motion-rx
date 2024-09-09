@@ -1,21 +1,11 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, 
-});
+import { textToSpeech } from '@/services/tts';
 
 export async function POST(request: Request) {
   const { text } = await request.json();
 
   try {
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "alloy",
-      input: text,
-    });
-
-    const buffer = await mp3.arrayBuffer();
+    const buffer = await textToSpeech(text);
     
     return new NextResponse(buffer, {
       status: 200,

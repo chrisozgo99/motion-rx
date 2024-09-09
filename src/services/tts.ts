@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function textToSpeech(text: string): Promise<ArrayBuffer> {
@@ -11,12 +11,11 @@ export async function textToSpeech(text: string): Promise<ArrayBuffer> {
     input: text,
   });
 
-  const buffer = await mp3.arrayBuffer();
-  return buffer;
+  return await mp3.arrayBuffer();
 }
 
 export function playAudio(audioBuffer: ArrayBuffer) {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   audioContext.decodeAudioData(audioBuffer, (buffer) => {
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
