@@ -39,10 +39,7 @@ export default function MotionAnalysis() {
   const [prompt, setPrompt] = useState('')
   const [isAnalysisStarted, setIsAnalysisStarted] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([])
   const [isClipping, setIsClipping] = useState(false)
-  const [clipStart, setClipStart] = useState(0)
-  const [clipEnd, setClipEnd] = useState(0)
   const [isTfReady, setIsTfReady] = useState(false)
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null)
   const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
@@ -62,48 +59,6 @@ export default function MotionAnalysis() {
   const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
   const animationFrameRef = useRef<number | null>(null)
 
-  const generateThumbnails = () => {
-    console.log("Generating thumbnails");
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current
-      const canvas = canvasRef.current
-      const context = canvas.getContext('2d')
-      if (!context) return
-
-      const thumbnailCount = 20
-      const thumbnailWidth = canvas.width / thumbnailCount
-
-      // Check if video duration is valid
-      if (!isFinite(video.duration) || video.duration === 0) {
-        console.error('Invalid video duration:', video.duration)
-        return
-      }
-
-      const generateThumbnail = (i: number) => {
-        const time = (video.duration / thumbnailCount) * i
-        if (!isFinite(time)) {
-          console.error('Invalid time calculated:', time)
-          return
-        }
-
-        video.currentTime = time
-      }
-
-      video.onseeked = () => {
-        const currentIndex = Math.floor(video.currentTime / (video.duration / thumbnailCount))
-        context.drawImage(video, currentIndex * thumbnailWidth, 0, thumbnailWidth, canvas.height)
-
-        if (currentIndex < thumbnailCount - 1) {
-          generateThumbnail(currentIndex + 1)
-        } else {
-          video.currentTime = 0
-        }
-      }
-
-      generateThumbnail(0)
-    }
-  }
-
   const handleVideoLoaded = useCallback(async () => {
     console.log("Video loaded");
 
@@ -121,7 +76,6 @@ export default function MotionAnalysis() {
         setTrimStart(0);
         setTrimEnd(1);
         setIsVideoLoaded(true);
-        generateThumbnails();
       } else {
         // If duration is not available, wait and check again
       }
@@ -129,7 +83,7 @@ export default function MotionAnalysis() {
       console.error("Invalid video reference");
       setIsVideoLoading(false);
     }
-  }, [generateThumbnails]);
+  }, []);
 
   useEffect(() => {
     const promptParam = searchParams.get('prompt')
