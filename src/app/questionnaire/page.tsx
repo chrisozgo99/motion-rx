@@ -14,10 +14,22 @@ interface Assessment {
   follow_up_care: string;
 }
 
+interface MotionAnalysis {
+  description: string;
+  key_points: string[];
+  expected_motion: string;
+  success_criteria: string;
+  measurements: {
+    type: string;
+    points: string[];
+    threshold: string;
+  }[];
+}
+
 interface APIResponse {
   next_question: string | null;
   assessment: Assessment | null;
-  motion_analysis: string | null;
+  motion_analysis: MotionAnalysis | null;
   motion_assessment_ready: boolean;
 }
 
@@ -28,7 +40,7 @@ export default function Questionnaire() {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string, content: string }>>([])
   const [assessment, setAssessment] = useState<Assessment | null>(null)
-  const [motionAnalysis, setMotionAnalysis] = useState<string | null>(null)
+  const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
   const [isAssessmentReady, setIsAssessmentReady] = useState<boolean>(false)
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -59,11 +71,11 @@ export default function Questionnaire() {
       console.log('Conversation History:', updatedHistory)
 
       if (data.motion_assessment_ready) {
-        setIsAssessmentReady(true)
-        setAssessment(data.assessment)
-        setMotionAnalysis(data.motion_analysis)
+        setIsAssessmentReady(true);
+        setAssessment(data.assessment);
+        setMotionAnalysis(data.motion_analysis);
       } else {
-        setCurrentQuestion(data.next_question || "No more questions.")
+        setCurrentQuestion(data.next_question || "No more questions.");
       }
       setResponse('')
     } catch (error) {
@@ -81,14 +93,37 @@ export default function Questionnaire() {
   }
 
   const renderAssessment = () => {
-    if (!assessment) return null
+    if (!assessment) return null;
     return (
       <div className="space-y-6">
         <div className="bg-blue-50 p-6 rounded-lg shadow-md">
           <h3 className="text-xl font-bold mb-4">Motion Analysis</h3>
-          <p className="mb-4">{motionAnalysis}</p>
+          {motionAnalysis && (
+            <div>
+              <p className="mb-2"><strong>Description:</strong> {motionAnalysis.description}</p>
+              <p className="mb-2"><strong>Key Points:</strong> {motionAnalysis.key_points.join(', ')}</p>
+              <p className="mb-2"><strong>Expected Motion:</strong> {motionAnalysis.expected_motion}</p>
+              <p className="mb-2"><strong>Success Criteria:</strong> {motionAnalysis.success_criteria}</p>
+              <div className="mb-2">
+                <strong>Measurements:</strong>
+                <ul>
+                  {motionAnalysis.measurements.map((measurement, index) => (
+                    <li key={index}>
+                      Type: {measurement.type}, Points: {measurement.points.join(', ')}, Threshold: {measurement.threshold}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
           <button
-            onClick={() => router.push(`/motion-analysis?prompt=${encodeURIComponent(motionAnalysis || '')}`)}
+            onClick={() => {
+              if (motionAnalysis && assessment) {
+                localStorage.setItem('motionAnalysis', JSON.stringify(motionAnalysis))
+                localStorage.setItem('assessment', JSON.stringify(assessment))
+                router.push('/motion-analysis')
+              }
+            }}
             className="w-full py-3 px-4 bg-[black] text-white rounded-md hover:bg-[black]/80 transition-colors"
           >
             Start Motion Analysis
@@ -103,8 +138,8 @@ export default function Questionnaire() {
           ))}
         </div>
       </div>
-    )
-  }
+    );
+  };
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-4 py-12 sm:px-6 lg:px-8">

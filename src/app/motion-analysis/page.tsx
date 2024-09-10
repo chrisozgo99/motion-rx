@@ -1,13 +1,33 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Webcam from 'react-webcam'
 import * as poseDetection from '@tensorflow-models/pose-detection'
 import * as tf from '@tensorflow/tfjs-core'
 import '@tensorflow/tfjs-backend-webgl'
 import { Slider } from "@/components/ui/slider"
+
+interface MotionAnalysis {
+  description: string;
+  key_points: string[];
+  expected_motion: string;
+  success_criteria: string;
+  measurements: {
+    type: string;
+    points: string[];
+    threshold: [number, number];
+  }[];
+}
+
+interface Assessment {
+  diagnosis: string;
+  recommended_exercises: string;
+  daily_routine: string;
+  precautions: string;
+  follow_up_care: string;
+}
 
 async function textToSpeech(text: string): Promise<ArrayBuffer> {
   const response = await fetch('/api/tts', {
@@ -36,17 +56,33 @@ function playAudio(audioBuffer: ArrayBuffer) {
 }
 
 function MotionAnalysisContent() {
-  const searchParams = useSearchParams()
-  const [prompt, setPrompt] = useState('')
+  const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
+  const [assessment, setAssessment] = useState<Assessment | null>(null)
+
+  useEffect(() => {
+    const storedMotionAnalysis = localStorage.getItem('motionAnalysis')
+    const storedAssessment = localStorage.getItem('assessment')
+    
+    if (storedMotionAnalysis) {
+      setMotionAnalysis(JSON.parse(storedMotionAnalysis))
+    }
+    if (storedAssessment) {
+      setAssessment(JSON.parse(storedAssessment))
+    }
+
+    // Clear the localStorage after retrieving the data
+    localStorage.removeItem('motionAnalysis')
+    localStorage.removeItem('assessment')
+  }, [])
+
+  const router = useRouter()
+
   const [isAnalysisStarted, setIsAnalysisStarted] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isClipping, setIsClipping] = useState(false)
   const [isTfReady, setIsTfReady] = useState(false)
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null)
   const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
-  const [trimStart] = useState(0)
-  const [trimEnd] = useState(1)
-  const [videoDuration, setVideoDuration] = useState(0)
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [isVideoLoading, setIsVideoLoading] = useState(true)
   const [startFrame, setStartFrame] = useState(0)
@@ -61,6 +97,7 @@ function MotionAnalysisContent() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
   const animationFrameRef = useRef<number | null>(null)
+  const [poseData, setPoseData] = useState<poseDetection.Pose[]>([]);
 
   const handleVideoLoaded = useCallback(async () => {
     console.log("Video loaded");
@@ -75,7 +112,6 @@ function MotionAnalysisContent() {
 
       if (isFinite(duration) && duration > 0) {
         setIsVideoLoading(false);
-        setVideoDuration(duration);
         const frames = Math.floor(duration * 30); // Assuming 30 fps
         setTotalFrames(frames);
         setStartFrame(0);
@@ -91,18 +127,13 @@ function MotionAnalysisContent() {
   }, []);
 
   useEffect(() => {
-    const promptParam = searchParams.get('prompt')
-    if (promptParam) {
-      setPrompt(decodeURIComponent(promptParam))
-    }
-
     // Initialize TensorFlow.js
     const setupTf = async () => {
       await tf.ready()
       setIsTfReady(true)
     }
     setupTf()
-  }, [searchParams])
+  }, [])
 
   useEffect(() => {
     if (isAnalysisStarted && isTfReady && !detector) {
@@ -139,13 +170,16 @@ function MotionAnalysisContent() {
 
     // Check if the video is ready
     if (video.readyState < 2) {
-      // Video is not ready yet, wait and try again
       requestAnimationFrame(detectPose)
       return
     }
 
     try {
       const poses = await detector.estimatePoses(video)
+      
+      // Store the pose data
+      setPoseData(prevData => [...prevData, ...poses]);
+
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
 
@@ -173,7 +207,7 @@ function MotionAnalysisContent() {
         if (isInFrame !== isUserInFrameRef.current) {
           isUserInFrameRef.current = isInFrame
           if (isInFrame) {
-            speakInstruction(prompt)
+            speakInstruction(motionAnalysis?.description || '')
             lastInstructionTimeRef.current = Date.now()
           }
         }
@@ -234,9 +268,7 @@ function MotionAnalysisContent() {
       animationFrameRef.current = requestAnimationFrame(detectPose)
     } catch (error) {
       console.error('Error estimating poses:', error)
-      // Optionally, you can add a small delay before trying again
       setTimeout(() => requestAnimationFrame(detectPose), 100)
-      return
     }
   }, [detector])
 
@@ -305,9 +337,58 @@ function MotionAnalysisContent() {
     }
   }, [recordedVideo]);
 
-  const handleSave = () => {
-    console.log(`Clip created from ${(trimStart * videoDuration).toFixed(2)}s to ${(trimEnd * videoDuration).toFixed(2)}s`)
-    // Here you would typically send this data to a server or process the video
+  const handleSave = async () => {
+    if (!recordedVideo || !motionAnalysis) return
+
+    const selectedPoses = poseData.slice(startFrame, endFrame + 1);
+    const results = selectedPoses.map(pose => analyzePose(pose, motionAnalysis));
+
+    // Process results and determine if the motion was successful
+    const success = processResults(results, motionAnalysis)
+
+    console.log('Motion analysis results:', success)
+
+    // Navigate back to the questionnaire page with the results
+    router.push(`/questionnaire?motionSuccess=${success}`)
+  }
+
+  const analyzePose = (pose: poseDetection.Pose, analysis: MotionAnalysis) => {
+    return analysis.measurements.map((measurement) => {
+      switch (measurement.type) {
+        case 'angle':
+          return calculateAngle(pose, measurement.points) ?? null
+        case 'distance':
+          return calculateDistance(pose, measurement.points) ?? null
+        default:
+          return null
+      }
+    }).filter((value): value is number => value !== null)
+  }
+
+  const calculateAngle = (pose: poseDetection.Pose, points: string[]) => {
+    const [p1, p2, p3] = points.map(point => pose.keypoints.find(kp => kp.name === point))
+    if (!p1 || !p2 || !p3) return null
+
+    const angle = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x)
+    return (angle * 180 / Math.PI + 360) % 360
+  }
+
+  const calculateDistance = (pose: poseDetection.Pose, points: string[]) => {
+    const [p1, p2] = points.map(point => pose.keypoints.find(kp => kp.name === point))
+    if (!p1 || !p2) return null
+
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2))
+  }
+
+  const processResults = (results: number[][], analysis: MotionAnalysis) => {
+    const averageMeasurements = results.reduce((acc: number[], curr: number[]) => 
+      curr.map((m, i) => (acc[i] || 0) + m), [])
+      .map(sum => sum / results.length)
+
+    return analysis.measurements.every((measurement, index) => {
+      const value = averageMeasurements[index]
+      return value >= measurement.threshold[0] && value <= measurement.threshold[1]
+    })
   }
 
   const handleFrameChange = useCallback((frame: number) => {
@@ -343,7 +424,14 @@ function MotionAnalysisContent() {
         <h1 className="text-3xl font-bold mb-6 text-center">Motion Analysis</h1>
         <div className="bg-white shadow-md rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">Instructions:</h2>
-          <p className="mb-4">{prompt}</p>
+          {motionAnalysis && (
+            <div>
+              <p className="mb-4">{motionAnalysis.description}</p>
+              <p className="mb-2"><strong>Key Points:</strong> {motionAnalysis.key_points.join(', ')}</p>
+              <p className="mb-2"><strong>Expected Motion:</strong> {motionAnalysis.expected_motion}</p>
+              <p className="mb-2"><strong>Success Criteria:</strong> {motionAnalysis.success_criteria}</p>
+            </div>
+          )}
           {!isAnalysisStarted ? (
             <button
               onClick={() => setIsAnalysisStarted(true)}

@@ -34,7 +34,17 @@ export async function POST(req: Request) {
    - Essential precautions (1-2 bullet points)
    - Follow-up care advice (1 sentence)
 
-4. Suggest a specific, detailed shoulder movement for motion analysis. Describe the movement clearly and explain its purpose.
+4. Generate a motion assessment compatible with MoveNet pose estimation capabilities:
+   - Focus on movements that can be accurately measured using the 17 key points detected by MoveNet: nose, eyes, ears, shoulders, elbows, wrists, hips, knees, and ankles.
+   - Prioritize assessments involving changes in position or angles between these detectable points.
+   - Avoid assessments requiring detection of fine motor skills or internal body movements.
+   - Suitable assessment types include arm raises, squats, lunges, or balance tests.
+   - For each assessment, clearly define:
+     a) A clear description of the movement to be performed.
+     b) Specific joints or key points to be measured.
+     c) The expected motion or change in position of these points.
+     d) Criteria for successful completion based on MoveNet's output.
+   - Specify which key points should be tracked, what measurements should be taken (e.g., angles, distances, velocities), and thresholds or ranges for successful completion.
 
 Your response should be in JSON format with the following structure:
 {
@@ -46,7 +56,19 @@ Your response should be in JSON format with the following structure:
     "precautions": "Essential precautions",
     "follow_up_care": "Brief follow-up advice"
   },
-  "motion_analysis": "Detailed description of a specific shoulder movement to analyze",
+  "motion_analysis": {
+    "description": "Detailed description of the movement to be performed",
+    "key_points": ["List of specific joints or key points to be measured"],
+    "expected_motion": "Description of expected motion or change in position",
+    "success_criteria": "Criteria for successful completion based on MoveNet's output",
+    "measurements": [
+      {
+        "type": "angle/distance/velocity",
+        "points": ["Key points involved in this measurement"],
+        "threshold": "Threshold or range for successful completion"
+      }
+    ]
+  },
   "motion_assessment_ready": boolean
 }
 Only include the assessment and motion_analysis when you're ready to provide the final assessment. Set motion_assessment_ready to true when providing the final assessment.` },
