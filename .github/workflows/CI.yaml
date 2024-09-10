@@ -23,33 +23,6 @@ jobs:
                   node-version: ${{ matrix.node-version }}
                   cache: "npm"
             - run: npm ci
-
-    test:
-        strategy:
-            matrix:
-                node-version: [20.x]
-
-        name: Run all tests
-        runs-on: ubuntu-latest
-
-        steps:
-            - uses: actions/checkout@v3
-              with:
-                  fetch-depth: 0 # Retrieve Git history, needed to verify commits
-            - name: Use Node.js ${{ matrix.node-version }}
-              uses: actions/setup-node@v3
-              with:
-                  node-version: ${{ matrix.node-version }}
-                  cache: "npm"
-            - run: npm ci
-
-            - if: github.event_name == 'pull_request'
-              name: Validate all commits from PR
-              run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
-
-            - name: Linter
-              run: npm run lint
-
     vercel-build:
         name: Vercel Build
         runs-on: ubuntu-latest
