@@ -49,3 +49,17 @@ jobs:
 
             - name: Linter
               run: npm run lint
+
+    vercel-build:
+        name: Vercel Build
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Use Node.js
+              uses: actions/setup-node@v3
+              with:
+                  node-version: '20.x'
+                  cache: 'npm'
+            - run: npm ci
+            - run: npm run build
+            # Add any other build steps your project requires
