@@ -122,6 +122,8 @@ function MotionAnalysisContent() {
       poseDetection.SupportedModels.MoveNet
     )
     setDetector(newDetector)
+    // Add a small delay before starting pose detection
+    setTimeout(() => detectPose(), 1000)
   }
 
   const detectPose = useCallback(async () => {
@@ -135,93 +137,107 @@ function MotionAnalysisContent() {
 
     if (!video || !ctx || !combinedCtx) return
 
-    const poses = await detector.estimatePoses(video)
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
-
-    // Draw mirrored video feed on both canvases
-    ctx.save()
-    ctx.scale(-1, 1)
-    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
-    ctx.restore()
-
-    combinedCtx.save()
-    combinedCtx.scale(-1, 1)
-    combinedCtx.drawImage(video, -combinedCanvas.width, 0, combinedCanvas.width, combinedCanvas.height)
-    combinedCtx.restore()
-
-    if (poses.length > 0) {
-      const pose = poses[0]
-      const keypoints = pose.keypoints.filter(kp =>
-        kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
-      )
-
-      const isInFrame = keypoints.every(kp =>
-        kp.score && kp.score > 0.5 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
-      )
-
-      if (isInFrame !== isUserInFrameRef.current) {
-        isUserInFrameRef.current = isInFrame
-        if (isInFrame) {
-          speakInstruction(prompt)
-          lastInstructionTimeRef.current = Date.now()
-        }
-      }
-
-      const currentTime = Date.now()
-      if (!isUserInFrameRef.current && currentTime - lastInstructionTimeRef.current > 15000) { // about every 10 seconds
-        const instruction = isRecording
-          ? "Please position your full body in the frame."
-          : "Start the recording, and then please position your full body in the frame."
-        speakInstruction(instruction)
-        lastInstructionTimeRef.current = currentTime
-
-      }
-
-      // Draw connecting lines
-      const connections = [
-        ['left_shoulder', 'right_shoulder'],
-        ['left_shoulder', 'left_elbow'],
-        ['left_elbow', 'left_wrist'],
-        ['right_shoulder', 'right_elbow'],
-        ['right_elbow', 'right_wrist'],
-        ['left_shoulder', 'left_hip'],
-        ['right_shoulder', 'right_hip'],
-        ['left_hip', 'right_hip'],
-        ['left_hip', 'left_knee'],
-        ['left_knee', 'left_ankle'],
-        ['right_hip', 'right_knee'],
-        ['right_knee', 'right_ankle']
-      ]
-
-      ctx.strokeStyle = 'white'
-      ctx.lineWidth = 2
-      connections.forEach(([start, end]) => {
-        const startPoint = keypoints.find(kp => kp.name === start)
-        const endPoint = keypoints.find(kp => kp.name === end)
-        if (startPoint && endPoint && startPoint.score && endPoint.score && startPoint.score > 0.5 && endPoint.score > 0.5) {
-          ctx.beginPath()
-          ctx.moveTo(canvas.width - startPoint.x, startPoint.y)
-          ctx.lineTo(canvas.width - endPoint.x, endPoint.y)
-          ctx.stroke()
-        }
-      })
-
-      // Draw keypoints
-      keypoints.forEach((keypoint) => {
-        if (keypoint.score && keypoint.score > 0.5) {
-          ctx.beginPath()
-          ctx.arc(canvas.width - keypoint.x, keypoint.y, 4, 0, 2 * Math.PI)
-          ctx.fillStyle = 'white'
-          ctx.fill()
-        }
-      })
+    // Check if the video is ready
+    if (video.readyState < 2) {
+      // Video is not ready yet, wait and try again
+      requestAnimationFrame(detectPose)
+      return
     }
 
-    // Copy the pose overlay to the combined canvas
-    combinedCtx.drawImage(canvas, 0, 0)
+    try {
+      const poses = await detector.estimatePoses(video)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
 
-    animationFrameRef.current = requestAnimationFrame(detectPose)
+      // Draw mirrored video feed on both canvases
+      ctx.save()
+      ctx.scale(-1, 1)
+      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
+      ctx.restore()
+
+      combinedCtx.save()
+      combinedCtx.scale(-1, 1)
+      combinedCtx.drawImage(video, -combinedCanvas.width, 0, combinedCanvas.width, combinedCanvas.height)
+      combinedCtx.restore()
+
+      if (poses.length > 0) {
+        const pose = poses[0]
+        const keypoints = pose.keypoints.filter(kp =>
+          kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
+        )
+
+        const isInFrame = keypoints.every(kp =>
+          kp.score && kp.score > 0.5 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
+        )
+
+        if (isInFrame !== isUserInFrameRef.current) {
+          isUserInFrameRef.current = isInFrame
+          if (isInFrame) {
+            speakInstruction(prompt)
+            lastInstructionTimeRef.current = Date.now()
+          }
+        }
+
+        const currentTime = Date.now()
+        if (!isUserInFrameRef.current && currentTime - lastInstructionTimeRef.current > 15000) { // about every 10 seconds
+          const instruction = isRecording
+            ? "Please position your full body in the frame."
+            : "Start the recording, and then please position your full body in the frame."
+          speakInstruction(instruction)
+          lastInstructionTimeRef.current = currentTime
+
+        }
+
+        // Draw connecting lines
+        const connections = [
+          ['left_shoulder', 'right_shoulder'],
+          ['left_shoulder', 'left_elbow'],
+          ['left_elbow', 'left_wrist'],
+          ['right_shoulder', 'right_elbow'],
+          ['right_elbow', 'right_wrist'],
+          ['left_shoulder', 'left_hip'],
+          ['right_shoulder', 'right_hip'],
+          ['left_hip', 'right_hip'],
+          ['left_hip', 'left_knee'],
+          ['left_knee', 'left_ankle'],
+          ['right_hip', 'right_knee'],
+          ['right_knee', 'right_ankle']
+        ]
+
+        ctx.strokeStyle = 'white'
+        ctx.lineWidth = 2
+        connections.forEach(([start, end]) => {
+          const startPoint = keypoints.find(kp => kp.name === start)
+          const endPoint = keypoints.find(kp => kp.name === end)
+          if (startPoint && endPoint && startPoint.score && endPoint.score && startPoint.score > 0.5 && endPoint.score > 0.5) {
+            ctx.beginPath()
+            ctx.moveTo(canvas.width - startPoint.x, startPoint.y)
+            ctx.lineTo(canvas.width - endPoint.x, endPoint.y)
+            ctx.stroke()
+          }
+        })
+
+        // Draw keypoints
+        keypoints.forEach((keypoint) => {
+          if (keypoint.score && keypoint.score > 0.5) {
+            ctx.beginPath()
+            ctx.arc(canvas.width - keypoint.x, keypoint.y, 4, 0, 2 * Math.PI)
+            ctx.fillStyle = 'white'
+            ctx.fill()
+          }
+        })
+      }
+
+      // Copy the pose overlay to the combined canvas
+      combinedCtx.drawImage(canvas, 0, 0)
+
+      animationFrameRef.current = requestAnimationFrame(detectPose)
+    } catch (error) {
+      console.error('Error estimating poses:', error)
+      // Optionally, you can add a small delay before trying again
+      setTimeout(() => requestAnimationFrame(detectPose), 100)
+      return
+    }
   }, [detector])
 
   const speakInstruction = async (text: string) => {
