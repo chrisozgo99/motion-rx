@@ -58,10 +58,12 @@ function playAudio(audioBuffer: ArrayBuffer) {
 function MotionAnalysisContent() {
   const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
+  const [questionnaireData, setQuestionnaireData] = useState<any>(null)
 
   useEffect(() => {
     const storedMotionAnalysis = localStorage.getItem('motionAnalysis')
     const storedAssessment = localStorage.getItem('assessment')
+    const storedQuestionnaireData = localStorage.getItem('questionnaireData')
     
     if (storedMotionAnalysis) {
       setMotionAnalysis(JSON.parse(storedMotionAnalysis))
@@ -69,10 +71,14 @@ function MotionAnalysisContent() {
     if (storedAssessment) {
       setAssessment(JSON.parse(storedAssessment))
     }
+    if (storedQuestionnaireData) {
+      setQuestionnaireData(JSON.parse(storedQuestionnaireData))
+    }
 
     // Clear the localStorage after retrieving the data
     localStorage.removeItem('motionAnalysis')
     localStorage.removeItem('assessment')
+    localStorage.removeItem('questionnaireData')
   }, [])
 
   const router = useRouter()
@@ -348,8 +354,39 @@ function MotionAnalysisContent() {
 
     console.log('Motion analysis results:', success)
 
-    // Navigate back to the questionnaire page with the results
-    router.push(`/questionnaire?motionSuccess=${success}`)
+    // Send data to generate diagnosis
+    try {
+      const response = await fetch('/api/generate-diagnosis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questionnaireResults: questionnaireData,
+          initialAssessment: assessment,
+          motionAssessmentResults: {
+            success,
+            results,
+            motionAnalysis,
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate diagnosis')
+      }
+
+      const diagnosis = await response.json()
+      
+      // Store the diagnosis in localStorage or state management solution
+      localStorage.setItem('diagnosis', JSON.stringify(diagnosis))
+
+      // Navigate to the diagnosis page
+      router.push('/diagnosis')
+    } catch (error) {
+      console.error('Error generating diagnosis:', error)
+      // Handle error (e.g., show error message to user)
+    }
   }
 
   const analyzePose = (pose: poseDetection.Pose, analysis: MotionAnalysis) => {
@@ -427,9 +464,6 @@ function MotionAnalysisContent() {
           {motionAnalysis && (
             <div>
               <p className="mb-4">{motionAnalysis.description}</p>
-              <p className="mb-2"><strong>Key Points:</strong> {motionAnalysis.key_points.join(', ')}</p>
-              <p className="mb-2"><strong>Expected Motion:</strong> {motionAnalysis.expected_motion}</p>
-              <p className="mb-2"><strong>Success Criteria:</strong> {motionAnalysis.success_criteria}</p>
             </div>
           )}
           {!isAnalysisStarted ? (
@@ -531,7 +565,7 @@ function MotionAnalysisContent() {
                   onClick={handleSave}
                   className="w-full inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  Save Clip
+                  Complete Motion Assessment
                 </button>
               )}
             </div>

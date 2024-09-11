@@ -8,10 +8,6 @@ import ConversationHistory from '@/components/ui/ConversationHistory'
 
 interface Assessment {
   diagnosis: string;
-  recommended_exercises: string;
-  daily_routine: string;
-  precautions: string;
-  follow_up_care: string;
 }
 
 interface MotionAnalysis {
@@ -43,8 +39,8 @@ export default function Questionnaire() {
   const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
   const [isAssessmentReady, setIsAssessmentReady] = useState<boolean>(false)
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault()
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (isLoading || !response.trim()) return
 
     setIsLoading(true)
@@ -74,6 +70,12 @@ export default function Questionnaire() {
         setIsAssessmentReady(true);
         setAssessment(data.assessment);
         setMotionAnalysis(data.motion_analysis);
+        
+        // Store questionnaire data
+        localStorage.setItem('questionnaireData', JSON.stringify({
+          conversationHistory,
+          assessment: data.assessment,
+        }));
       } else {
         setCurrentQuestion(data.next_question || "No more questions.");
       }
@@ -88,7 +90,7 @@ export default function Questionnaire() {
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit()
+      handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>)
     }
   }
 
@@ -96,24 +98,15 @@ export default function Questionnaire() {
     if (!assessment) return null;
     return (
       <div className="space-y-6">
+        <div className="bg-gray-50 p-4 rounded-md mb-4">
+          <h3 className="font-bold text-lg mb-2">Preliminary Diagnosis</h3>
+          <p>{assessment.diagnosis}</p>
+        </div>
         <div className="bg-blue-50 p-6 rounded-lg shadow-md">
           <h3 className="text-xl font-bold mb-4">Motion Analysis</h3>
           {motionAnalysis && (
             <div>
               <p className="mb-2"><strong>Description:</strong> {motionAnalysis.description}</p>
-              <p className="mb-2"><strong>Key Points:</strong> {motionAnalysis.key_points.join(', ')}</p>
-              <p className="mb-2"><strong>Expected Motion:</strong> {motionAnalysis.expected_motion}</p>
-              <p className="mb-2"><strong>Success Criteria:</strong> {motionAnalysis.success_criteria}</p>
-              <div className="mb-2">
-                <strong>Measurements:</strong>
-                <ul>
-                  {motionAnalysis.measurements.map((measurement, index) => (
-                    <li key={index}>
-                      Type: {measurement.type}, Points: {measurement.points.join(', ')}, Threshold: {measurement.threshold}
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </div>
           )}
           <button
@@ -128,14 +121,6 @@ export default function Questionnaire() {
           >
             Start Motion Analysis
           </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.entries(assessment).map(([key, value]) => (
-            <div key={key} className="bg-gray-50 p-4 rounded-md">
-              <h3 className="font-bold text-lg mb-2">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h3>
-              <p>{value}</p>
-            </div>
-          ))}
         </div>
       </div>
     );
