@@ -1,13 +1,26 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Webcam from 'react-webcam'
 import * as poseDetection from '@tensorflow-models/pose-detection'
 import * as tf from '@tensorflow/tfjs-core'
 import '@tensorflow/tfjs-backend-webgl'
 import { Slider } from "@/components/ui/slider"
+
+interface MotionAnalysis {
+  directions: string;
+  measurements: {
+    type: string;
+    points: string[];
+    threshold: [number, number];
+  }[];
+}
+
+interface Assessment {
+  diagnosis: string;
+}
 
 async function textToSpeech(text: string): Promise<ArrayBuffer> {
   const response = await fetch('/api/tts', {
@@ -36,17 +49,39 @@ function playAudio(audioBuffer: ArrayBuffer) {
 }
 
 function MotionAnalysisContent() {
-  const searchParams = useSearchParams()
-  const [prompt, setPrompt] = useState('')
+  const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
+  const [assessment, setAssessment] = useState<Assessment | null>(null)
+  const [questionnaireData, setQuestionnaireData] = useState(null)
+
+  useEffect(() => {
+    const storedMotionAnalysis = localStorage.getItem('motionAnalysis')
+    const storedAssessment = localStorage.getItem('assessment')
+    const storedQuestionnaireData = localStorage.getItem('questionnaireData')
+    
+    if (storedMotionAnalysis) {
+      setMotionAnalysis(JSON.parse(storedMotionAnalysis))
+    }
+    if (storedAssessment) {
+      setAssessment(JSON.parse(storedAssessment))
+    }
+    if (storedQuestionnaireData) {
+      setQuestionnaireData(JSON.parse(storedQuestionnaireData))
+    }
+
+    // Clear the localStorage after retrieving the data
+    localStorage.removeItem('motionAnalysis')
+    localStorage.removeItem('assessment')
+    localStorage.removeItem('questionnaireData')
+  }, [])
+
+  const router = useRouter()
+
   const [isAnalysisStarted, setIsAnalysisStarted] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isClipping, setIsClipping] = useState(false)
   const [isTfReady, setIsTfReady] = useState(false)
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null)
   const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
-  const [trimStart] = useState(0)
-  const [trimEnd] = useState(1)
-  const [videoDuration, setVideoDuration] = useState(0)
   const [isVideoLoaded, setIsVideoLoaded] = useState(false)
   const [isVideoLoading, setIsVideoLoading] = useState(true)
   const [startFrame, setStartFrame] = useState(0)
@@ -61,6 +96,8 @@ function MotionAnalysisContent() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
   const animationFrameRef = useRef<number | null>(null)
+  const [poseData, setPoseData] = useState<poseDetection.Pose[]>([]);
+  const hasSpokenInstructionRef = useRef(false);
 
   const handleVideoLoaded = useCallback(async () => {
     console.log("Video loaded");
@@ -75,7 +112,6 @@ function MotionAnalysisContent() {
 
       if (isFinite(duration) && duration > 0) {
         setIsVideoLoading(false);
-        setVideoDuration(duration);
         const frames = Math.floor(duration * 30); // Assuming 30 fps
         setTotalFrames(frames);
         setStartFrame(0);
@@ -91,18 +127,13 @@ function MotionAnalysisContent() {
   }, []);
 
   useEffect(() => {
-    const promptParam = searchParams.get('prompt')
-    if (promptParam) {
-      setPrompt(decodeURIComponent(promptParam))
-    }
-
     // Initialize TensorFlow.js
     const setupTf = async () => {
       await tf.ready()
       setIsTfReady(true)
     }
     setupTf()
-  }, [searchParams])
+  }, [])
 
   useEffect(() => {
     if (isAnalysisStarted && isTfReady && !detector) {
@@ -122,6 +153,8 @@ function MotionAnalysisContent() {
       poseDetection.SupportedModels.MoveNet
     )
     setDetector(newDetector)
+    // Add a small delay before starting pose detection
+    setTimeout(() => detectPose(), 1000)
   }
 
   const detectPose = useCallback(async () => {
@@ -135,93 +168,112 @@ function MotionAnalysisContent() {
 
     if (!video || !ctx || !combinedCtx) return
 
-    const poses = await detector.estimatePoses(video)
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
-
-    // Draw mirrored video feed on both canvases
-    ctx.save()
-    ctx.scale(-1, 1)
-    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
-    ctx.restore()
-
-    combinedCtx.save()
-    combinedCtx.scale(-1, 1)
-    combinedCtx.drawImage(video, -combinedCanvas.width, 0, combinedCanvas.width, combinedCanvas.height)
-    combinedCtx.restore()
-
-    if (poses.length > 0) {
-      const pose = poses[0]
-      const keypoints = pose.keypoints.filter(kp =>
-        kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
-      )
-
-      const isInFrame = keypoints.every(kp =>
-        kp.score && kp.score > 0.5 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
-      )
-
-      if (isInFrame !== isUserInFrameRef.current) {
-        isUserInFrameRef.current = isInFrame
-        if (isInFrame) {
-          speakInstruction(prompt)
-          lastInstructionTimeRef.current = Date.now()
-        }
-      }
-
-      const currentTime = Date.now()
-      if (!isUserInFrameRef.current && currentTime - lastInstructionTimeRef.current > 15000) { // about every 10 seconds
-        const instruction = isRecording
-          ? "Please position your full body in the frame."
-          : "Start the recording, and then please position your full body in the frame."
-        speakInstruction(instruction)
-        lastInstructionTimeRef.current = currentTime
-
-      }
-
-      // Draw connecting lines
-      const connections = [
-        ['left_shoulder', 'right_shoulder'],
-        ['left_shoulder', 'left_elbow'],
-        ['left_elbow', 'left_wrist'],
-        ['right_shoulder', 'right_elbow'],
-        ['right_elbow', 'right_wrist'],
-        ['left_shoulder', 'left_hip'],
-        ['right_shoulder', 'right_hip'],
-        ['left_hip', 'right_hip'],
-        ['left_hip', 'left_knee'],
-        ['left_knee', 'left_ankle'],
-        ['right_hip', 'right_knee'],
-        ['right_knee', 'right_ankle']
-      ]
-
-      ctx.strokeStyle = 'white'
-      ctx.lineWidth = 2
-      connections.forEach(([start, end]) => {
-        const startPoint = keypoints.find(kp => kp.name === start)
-        const endPoint = keypoints.find(kp => kp.name === end)
-        if (startPoint && endPoint && startPoint.score && endPoint.score && startPoint.score > 0.5 && endPoint.score > 0.5) {
-          ctx.beginPath()
-          ctx.moveTo(canvas.width - startPoint.x, startPoint.y)
-          ctx.lineTo(canvas.width - endPoint.x, endPoint.y)
-          ctx.stroke()
-        }
-      })
-
-      // Draw keypoints
-      keypoints.forEach((keypoint) => {
-        if (keypoint.score && keypoint.score > 0.5) {
-          ctx.beginPath()
-          ctx.arc(canvas.width - keypoint.x, keypoint.y, 4, 0, 2 * Math.PI)
-          ctx.fillStyle = 'white'
-          ctx.fill()
-        }
-      })
+    // Check if the video is ready
+    if (video.readyState < 2) {
+      requestAnimationFrame(detectPose)
+      return
     }
 
-    // Copy the pose overlay to the combined canvas
-    combinedCtx.drawImage(canvas, 0, 0)
+    try {
+      const poses = await detector.estimatePoses(video)
+      
+      // Store the pose data
+      setPoseData(prevData => [...prevData, ...poses]);
 
-    animationFrameRef.current = requestAnimationFrame(detectPose)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      combinedCtx.clearRect(0, 0, combinedCanvas.width, combinedCanvas.height)
+
+      // Draw mirrored video feed on both canvases
+      ctx.save()
+      ctx.scale(-1, 1)
+      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
+      ctx.restore()
+
+      combinedCtx.save()
+      combinedCtx.scale(-1, 1)
+      combinedCtx.drawImage(video, -combinedCanvas.width, 0, combinedCanvas.width, combinedCanvas.height)
+      combinedCtx.restore()
+
+      if (poses.length > 0) {
+        const pose = poses[0]
+        const keypoints = pose.keypoints.filter(kp =>
+          kp.name && !['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)
+        )
+
+        const isInFrame = keypoints.every(kp =>
+          kp.score && kp.score > 0.3 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
+        )
+
+        if (isInFrame !== isUserInFrameRef.current) {
+          if (isInFrame) {
+            // Only speak the instruction if the user wasn't in frame before and we haven't spoken yet
+            if (!isUserInFrameRef.current && !hasSpokenInstructionRef.current) {
+              speakInstruction(motionAnalysis?.directions || '');
+              hasSpokenInstructionRef.current = true;
+            }
+            lastInstructionTimeRef.current = Date.now();
+          }
+          isUserInFrameRef.current = isInFrame;
+        }
+
+        const currentTime = Date.now()
+        if (!isUserInFrameRef.current && currentTime - lastInstructionTimeRef.current > 15000) { // about every 10 seconds
+          const instruction = isRecording
+            ? "Please position your full body in the frame."
+            : "Start the recording, and then please position your full body in the frame."
+          speakInstruction(instruction)
+          lastInstructionTimeRef.current = currentTime
+
+        }
+
+        // Draw connecting lines
+        const connections = [
+          ['left_shoulder', 'right_shoulder'],
+          ['left_shoulder', 'left_elbow'],
+          ['left_elbow', 'left_wrist'],
+          ['right_shoulder', 'right_elbow'],
+          ['right_elbow', 'right_wrist'],
+          ['left_shoulder', 'left_hip'],
+          ['right_shoulder', 'right_hip'],
+          ['left_hip', 'right_hip'],
+          ['left_hip', 'left_knee'],
+          ['left_knee', 'left_ankle'],
+          ['right_hip', 'right_knee'],
+          ['right_knee', 'right_ankle']
+        ]
+
+        ctx.strokeStyle = 'white'
+        ctx.lineWidth = 2
+        connections.forEach(([start, end]) => {
+          const startPoint = keypoints.find(kp => kp.name === start)
+          const endPoint = keypoints.find(kp => kp.name === end)
+          if (startPoint && endPoint && startPoint.score && endPoint.score && startPoint.score > 0.5 && endPoint.score > 0.5) {
+            ctx.beginPath()
+            ctx.moveTo(canvas.width - startPoint.x, startPoint.y)
+            ctx.lineTo(canvas.width - endPoint.x, endPoint.y)
+            ctx.stroke()
+          }
+        })
+
+        // Draw keypoints
+        keypoints.forEach((keypoint) => {
+          if (keypoint.score && keypoint.score > 0.5) {
+            ctx.beginPath()
+            ctx.arc(canvas.width - keypoint.x, keypoint.y, 4, 0, 2 * Math.PI)
+            ctx.fillStyle = 'white'
+            ctx.fill()
+          }
+        })
+      }
+
+      // Copy the pose overlay to the combined canvas
+      combinedCtx.drawImage(canvas, 0, 0)
+
+      animationFrameRef.current = requestAnimationFrame(detectPose)
+    } catch (error) {
+      console.error('Error estimating poses:', error)
+      setTimeout(() => requestAnimationFrame(detectPose), 100)
+    }
   }, [detector])
 
   const speakInstruction = async (text: string) => {
@@ -289,9 +341,89 @@ function MotionAnalysisContent() {
     }
   }, [recordedVideo]);
 
-  const handleSave = () => {
-    console.log(`Clip created from ${(trimStart * videoDuration).toFixed(2)}s to ${(trimEnd * videoDuration).toFixed(2)}s`)
-    // Here you would typically send this data to a server or process the video
+  const handleSave = async () => {
+    if (!recordedVideo || !motionAnalysis) return
+
+    const selectedPoses = poseData.slice(startFrame, endFrame + 1);
+    const results = selectedPoses.map(pose => analyzePose(pose, motionAnalysis));
+
+    // Process results and determine if the motion was successful
+    const success = processResults(results, motionAnalysis)
+
+    console.log('Motion analysis results:', success)
+
+    // Send data to generate diagnosis
+    try {
+      const response = await fetch('/api/generate-diagnosis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questionnaireResults: questionnaireData,
+          initialAssessment: assessment,
+          motionAssessmentResults: {
+            success,
+            results,
+            motionAnalysis,
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate diagnosis')
+      }
+
+      const diagnosis = await response.json()
+      
+      // Store the diagnosis in localStorage or state management solution
+      localStorage.setItem('diagnosis', JSON.stringify(diagnosis))
+
+      // Navigate to the diagnosis page
+      router.push('/diagnosis')
+    } catch (error) {
+      console.error('Error generating diagnosis:', error)
+      // Handle error (e.g., show error message to user)
+    }
+  }
+
+  const analyzePose = (pose: poseDetection.Pose, analysis: MotionAnalysis) => {
+    return analysis.measurements.map((measurement) => {
+      switch (measurement.type) {
+        case 'angle':
+          return calculateAngle(pose, measurement.points) ?? null
+        case 'distance':
+          return calculateDistance(pose, measurement.points) ?? null
+        default:
+          return null
+      }
+    }).filter((value): value is number => value !== null)
+  }
+
+  const calculateAngle = (pose: poseDetection.Pose, points: string[]) => {
+    const [p1, p2, p3] = points.map(point => pose.keypoints.find(kp => kp.name === point))
+    if (!p1 || !p2 || !p3) return null
+
+    const angle = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x)
+    return (angle * 180 / Math.PI + 360) % 360
+  }
+
+  const calculateDistance = (pose: poseDetection.Pose, points: string[]) => {
+    const [p1, p2] = points.map(point => pose.keypoints.find(kp => kp.name === point))
+    if (!p1 || !p2) return null
+
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2))
+  }
+
+  const processResults = (results: number[][], analysis: MotionAnalysis) => {
+    const averageMeasurements = results.reduce((acc: number[], curr: number[]) => 
+      curr.map((m, i) => (acc[i] || 0) + m), [])
+      .map(sum => sum / results.length)
+
+    return analysis.measurements.every((measurement, index) => {
+      const value = averageMeasurements[index]
+      return value >= measurement.threshold[0] && value <= measurement.threshold[1]
+    })
   }
 
   const handleFrameChange = useCallback((frame: number) => {
@@ -327,7 +459,11 @@ function MotionAnalysisContent() {
         <h1 className="text-3xl font-bold mb-6 text-center">Motion Analysis</h1>
         <div className="bg-white shadow-md rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">Instructions:</h2>
-          <p className="mb-4">{prompt}</p>
+          {motionAnalysis && (
+            <div>
+              <p className="mb-4">{motionAnalysis.directions}</p>
+            </div>
+          )}
           {!isAnalysisStarted ? (
             <button
               onClick={() => setIsAnalysisStarted(true)}
@@ -427,7 +563,7 @@ function MotionAnalysisContent() {
                   onClick={handleSave}
                   className="w-full inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  Save Clip
+                  Complete Motion Assessment
                 </button>
               )}
             </div>
