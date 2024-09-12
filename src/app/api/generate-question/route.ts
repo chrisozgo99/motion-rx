@@ -6,10 +6,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-interface Assessment {
-  diagnosis: string;
-}
-
 export async function POST(req: Request) {
   const { currentQuestion, response, conversationHistory } = await req.json()
   try {

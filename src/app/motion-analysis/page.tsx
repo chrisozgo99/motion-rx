@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Webcam from 'react-webcam'
 import * as poseDetection from '@tensorflow-models/pose-detection'
@@ -51,7 +51,7 @@ function playAudio(audioBuffer: ArrayBuffer) {
 function MotionAnalysisContent() {
   const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
-  const [questionnaireData, setQuestionnaireData] = useState<any>(null)
+  const [questionnaireData, setQuestionnaireData] = useState(null)
 
   useEffect(() => {
     const storedMotionAnalysis = localStorage.getItem('motionAnalysis')
