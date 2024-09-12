@@ -8,16 +8,21 @@ import ConversationHistory from '@/components/ui/ConversationHistory'
 
 interface Assessment {
   diagnosis: string;
-  recommended_exercises: string;
-  daily_routine: string;
-  precautions: string;
-  follow_up_care: string;
+}
+
+interface MotionAnalysis {
+  directions: string;
+  measurements: {
+    type: string;
+    points: string[];
+    threshold: string;
+  }[];
 }
 
 interface APIResponse {
   next_question: string | null;
   assessment: Assessment | null;
-  motion_analysis: string | null;
+  motion_analysis: MotionAnalysis | null;
   motion_assessment_ready: boolean;
 }
 
@@ -28,11 +33,11 @@ export default function Questionnaire() {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string, content: string }>>([])
   const [assessment, setAssessment] = useState<Assessment | null>(null)
-  const [motionAnalysis, setMotionAnalysis] = useState<string | null>(null)
+  const [motionAnalysis, setMotionAnalysis] = useState<MotionAnalysis | null>(null)
   const [isAssessmentReady, setIsAssessmentReady] = useState<boolean>(false)
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault()
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (isLoading || !response.trim()) return
 
     setIsLoading(true)
@@ -59,11 +64,17 @@ export default function Questionnaire() {
       console.log('Conversation History:', updatedHistory)
 
       if (data.motion_assessment_ready) {
-        setIsAssessmentReady(true)
-        setAssessment(data.assessment)
-        setMotionAnalysis(data.motion_analysis)
+        setIsAssessmentReady(true);
+        setAssessment(data.assessment);
+        setMotionAnalysis(data.motion_analysis);
+        
+        // Store questionnaire data
+        localStorage.setItem('questionnaireData', JSON.stringify({
+          conversationHistory,
+          assessment: data.assessment,
+        }));
       } else {
-        setCurrentQuestion(data.next_question || "No more questions.")
+        setCurrentQuestion(data.next_question || "No more questions.");
       }
       setResponse('')
     } catch (error) {
@@ -76,35 +87,41 @@ export default function Questionnaire() {
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit()
+      handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>)
     }
   }
 
   const renderAssessment = () => {
-    if (!assessment) return null
+    if (!assessment) return null;
     return (
       <div className="space-y-6">
+        <div className="bg-gray-50 p-4 rounded-md mb-4">
+          <h3 className="font-bold text-lg mb-2">Preliminary Diagnosis</h3>
+          <p>{assessment.diagnosis}</p>
+        </div>
         <div className="bg-blue-50 p-6 rounded-lg shadow-md">
           <h3 className="text-xl font-bold mb-4">Motion Analysis</h3>
-          <p className="mb-4">{motionAnalysis}</p>
+          {motionAnalysis && (
+            <div>
+              <p className="mb-2"><strong>Description:</strong> {motionAnalysis.directions}</p>
+            </div>
+          )}
           <button
-            onClick={() => router.push(`/motion-analysis?prompt=${encodeURIComponent(motionAnalysis || '')}`)}
+            onClick={() => {
+              if (motionAnalysis && assessment) {
+                localStorage.setItem('motionAnalysis', JSON.stringify(motionAnalysis))
+                localStorage.setItem('assessment', JSON.stringify(assessment))
+                router.push('/motion-analysis')
+              }
+            }}
             className="w-full py-3 px-4 bg-[black] text-white rounded-md hover:bg-[black]/80 transition-colors"
           >
             Start Motion Analysis
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.entries(assessment).map(([key, value]) => (
-            <div key={key} className="bg-gray-50 p-4 rounded-md">
-              <h3 className="font-bold text-lg mb-2">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h3>
-              <p>{value}</p>
-            </div>
-          ))}
-        </div>
       </div>
-    )
-  }
+    );
+  };
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-4 py-12 sm:px-6 lg:px-8">
