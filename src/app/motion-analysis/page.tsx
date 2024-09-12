@@ -10,10 +10,7 @@ import '@tensorflow/tfjs-backend-webgl'
 import { Slider } from "@/components/ui/slider"
 
 interface MotionAnalysis {
-  description: string;
-  key_points: string[];
-  expected_motion: string;
-  success_criteria: string;
+  directions: string;
   measurements: {
     type: string;
     points: string[];
@@ -23,10 +20,6 @@ interface MotionAnalysis {
 
 interface Assessment {
   diagnosis: string;
-  recommended_exercises: string;
-  daily_routine: string;
-  precautions: string;
-  follow_up_care: string;
 }
 
 async function textToSpeech(text: string): Promise<ArrayBuffer> {
@@ -104,6 +97,7 @@ function MotionAnalysisContent() {
   const combinedCanvasRef = useRef<HTMLCanvasElement>(null)
   const animationFrameRef = useRef<number | null>(null)
   const [poseData, setPoseData] = useState<poseDetection.Pose[]>([]);
+  const hasSpokenInstructionRef = useRef(false);
 
   const handleVideoLoaded = useCallback(async () => {
     console.log("Video loaded");
@@ -207,15 +201,19 @@ function MotionAnalysisContent() {
         )
 
         const isInFrame = keypoints.every(kp =>
-          kp.score && kp.score > 0.5 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
+          kp.score && kp.score > 0.3 && kp.x > 0.05 * canvas.width && kp.x < 0.95 * canvas.width && kp.y > 0.05 * canvas.height && kp.y < 0.95 * canvas.height
         )
 
         if (isInFrame !== isUserInFrameRef.current) {
-          isUserInFrameRef.current = isInFrame
           if (isInFrame) {
-            speakInstruction(motionAnalysis?.description || '')
-            lastInstructionTimeRef.current = Date.now()
+            // Only speak the instruction if the user wasn't in frame before and we haven't spoken yet
+            if (!isUserInFrameRef.current && !hasSpokenInstructionRef.current) {
+              speakInstruction(motionAnalysis?.directions || '');
+              hasSpokenInstructionRef.current = true;
+            }
+            lastInstructionTimeRef.current = Date.now();
           }
+          isUserInFrameRef.current = isInFrame;
         }
 
         const currentTime = Date.now()
@@ -463,7 +461,7 @@ function MotionAnalysisContent() {
           <h2 className="text-xl font-semibold mb-4">Instructions:</h2>
           {motionAnalysis && (
             <div>
-              <p className="mb-4">{motionAnalysis.description}</p>
+              <p className="mb-4">{motionAnalysis.directions}</p>
             </div>
           )}
           {!isAnalysisStarted ? (

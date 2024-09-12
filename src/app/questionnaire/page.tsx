@@ -11,10 +11,7 @@ interface Assessment {
 }
 
 interface MotionAnalysis {
-  description: string;
-  key_points: string[];
-  expected_motion: string;
-  success_criteria: string;
+  directions: string;
   measurements: {
     type: string;
     points: string[];
@@ -106,7 +103,7 @@ export default function Questionnaire() {
           <h3 className="text-xl font-bold mb-4">Motion Analysis</h3>
           {motionAnalysis && (
             <div>
-              <p className="mb-2"><strong>Description:</strong> {motionAnalysis.description}</p>
+              <p className="mb-2"><strong>Description:</strong> {motionAnalysis.directions}</p>
             </div>
           )}
           <button

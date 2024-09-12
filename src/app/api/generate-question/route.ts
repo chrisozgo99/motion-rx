@@ -53,10 +53,7 @@ Your response should be in JSON format with the following structure:
     "diagnosis": "Concise potential diagnosis or explanation",
   },
   "motion_analysis": {
-    "description": "Clear, step-by-step instructions for the movement to be performed",
-    "key_points": ["List of specific joints or key points to be measured"],
-    "expected_motion": "Description of expected motion or change in position",
-    "success_criteria": "Criteria for successful completion based on MoveNet's output",
+    "directions": "Clear, step-by-step instructions for the movement to be performed that will be used for text-to-speech guidance",
     "measurements": [
       {
         "type": "angle/distance/velocity",

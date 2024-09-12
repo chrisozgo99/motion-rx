@@ -23,7 +23,6 @@ export default function DiagnosisPage() {
     const storedDiagnosis = localStorage.getItem('diagnosis')
     if (storedDiagnosis) {
       setDiagnosis(JSON.parse(storedDiagnosis))
-      localStorage.removeItem('diagnosis')
     } else {
       // If no diagnosis is found, redirect to the questionnaire
       router.push('/questionnaire')
